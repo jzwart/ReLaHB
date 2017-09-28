@@ -142,7 +142,8 @@ d_100 <- compile_output('./30_lake_water_energy_model/temp/output_100_days/', nL
 d_20 <- compile_output('./30_lake_water_energy_model/temp/output_20_days/', nLayers = nLayers)
 d_5 <- compile_output('./30_lake_water_energy_model/temp/output_5_days/', nLayers = nLayers)
 
-windows()
+png('./30_lake_water_energy_model/temp/figures/interval_sensativity.png',width = 14, 
+    height = 7, units = 'in',res = 300)
 ylim=c(min(c(d_2$temp_0,d_10$temp_0,d_40$temp_0,d_100$temp_0),na.rm = T),
        max(c(d_2$temp_0,d_10$temp_0,d_40$temp_0,d_100$temp_0),na.rm = T))
 par(mar=c(5,6,3,3))
@@ -156,16 +157,25 @@ lines(d_20$temp_0~d_20$DateTime, col='orange',lwd=lwd)
 lines(d_5$temp_0~d_5$DateTime, col='pink',lwd=lwd)
 legend('topright',legend = c('2 days','5 days', '10 days', '20 days', '40 days',' 100 days'),col = c('black','pink','red','orange', 'blue','green'),
        lwd=lwd , cex = 2,bty = 'n')
+dev.off()
 
-windows()
+png('./30_lake_water_energy_model/temp/figures/profile_2days.png',width = 14, 
+    height = 7, units = 'in',res = 300)
 colnames(d_2)[1]='datetime'
-wtr.heat.map(d_2)
-windows()
+wtr.heat.map(d_2,main = '2 day time step')
+dev.off()
+
+png('./30_lake_water_energy_model/temp/figures/profile_5days.png',width = 14, 
+    height = 7, units = 'in',res = 300)
 colnames(d_5)[1]='datetime'
-wtr.heat.map(d_5)
-windows()
+wtr.heat.map(d_5,main = '5 day time step')
+dev.off()
+
+png('./30_lake_water_energy_model/temp/figures/profile_10days.png',width = 14, 
+    height = 7, units = 'in',res = 300)
 colnames(d_10)[1]='datetime'
-wtr.heat.map(d_10)
+wtr.heat.map(d_10,main = '10 day time step')
+dev.off()
 
 
 
