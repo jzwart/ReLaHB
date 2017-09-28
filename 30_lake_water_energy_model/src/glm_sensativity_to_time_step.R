@@ -51,6 +51,20 @@ for(step in time_step){
   nml_orig_file <- file.path(tmp, 'glm2.nml') # original cfg file path
   nml_orig <- read_nml(nml_orig_file)
   
+  # make elevation higher and huge area 
+  nml_tmp_file <- file.path(tmp2, 'glm2.nml')
+  nml_tmp <- read_nml(nml_tmp_file) # cur nml file in temp run folder 
+  
+  # change nml H and A 
+  H <- nml_tmp$morphometry$H
+  A <- nml_tmp$morphometry$A
+  H <- c(H,tail(H,1)+20)
+  A <- c(A, tail(A,1)*10)
+
+  nml_tmp <- set_nml(nml_tmp, arg_name = 'H', arg_val = H)
+  nml_tmp <- set_nml(nml_tmp, arg_name = 'A', arg_val = A)
+  write_nml(glm_nml = nml_tmp, file = nml_tmp_file)
+  
   for(breaks in 1:length(stops)){
     nml_tmp_file <- file.path(tmp2, 'glm2.nml')
     nml_tmp <- read_nml(nml_tmp_file) # cur nml file in temp run folder 
@@ -68,43 +82,28 @@ for(step in time_step){
     
     file.rename(from = nc_tmp_file, to = moveTo)
     
-    # use sim output to set init_profiles of nml file 
-    cur_temp <- get_temp(moveTo)
-    nml_tmp <- set_nml(nml_tmp, arg_name = 'num_depths', arg_val = (ncol(cur_temp)-1))
+    # change nml to save to out dir instead of moving files around *********************************************
     
-    depths <- round(as.numeric(na.omit(as.numeric(unlist(strsplit(names(cur_temp)[2:ncol(cur_temp)], split = 'temp.elv_'))))),digits = 5)
-    depths[length(depths)] <- round(get_surface_height(moveTo)[nrow(cur_temp),2],digits = 5)
+    # use sim output to set init_profiles of nml file 
+    # n_depths <- seq() # vector of depths out for get_temp  func 
+    
+    cur_temp <- get_temp(moveTo, reference = 'surface', t_out = stops[breaks])[,-1L]
+    nml_tmp <- set_nml(nml_tmp, arg_name = 'num_depths', arg_val = ncol(cur_temp))
+    
+    round_digits <- 0.0001 # how many digits we want to round down to
+    depths <- floor(get.offsets(cur_temp)/round_digits)*round_digits
+    depths[length(depths)] <- floor(tail(get_surface_height(moveTo)[,2],1)/round_digits)*round_digits
+    temps <- as.numeric(get_temp(moveTo, reference = 'surface', z_out = depths, t_out = stops[breaks])[,-1L])
+    
     nml_tmp <- set_nml(nml_tmp, arg_name = 'the_depths', arg_val = depths)
     nml_tmp <- set_nml(nml_tmp, arg_name = 'lake_depth', arg_val = depths[length(depths)])
-    temps <- get_temp(moveTo, z_out = get_surface_height(moveTo)[nrow(cur_temp),2])[nrow(cur_temp),2] # gets temp for surface; ensures no NA's 
-    temps <- c(as.numeric(cur_temp[nrow(cur_temp),2:(ncol(cur_temp)-1)]),temps)
     nml_tmp <- set_nml(nml_tmp, arg_name = 'the_temps', arg_val = temps)
     nml_tmp <- set_nml(nml_tmp, arg_name = 'the_sals', arg_val = rep(0,length(depths)))
     
-    # have to change morphometry based on most recent lake depth 
-    max_z <- nml_tmp$init_profiles$lake_depth
-    x <- nml_tmp$morphometry$H
-    y <- nml_tmp$morphometry$A
-    xout <- c(nml_tmp$morphometry$H[1:(nml_tmp$morphometry$bsn_vals-1)],nml_tmp$morphometry$H[1]+max_z)
-    interp_area <- approx(x = x, y = y, xout = xout)$y
-    if(is.na(interp_area[length(interp_area)])){ # if interpolation has NA 
-      slope <- (y[length(y)]-y[(length(y)-1)])/(x[length(x)]-x[(length(x)-1)])
-      interp_area[length(interp_area)] <- y[(length(y)-1)]+slope*(xout[length(xout)]-xout[(length(xout)-1)])
-    }
-    
-    xout <- xout[sort.list(xout)]
-    interp_area <- interp_area[sort.list(interp_area)]
-    
-    nml_tmp <- set_nml(nml_tmp, arg_name = 'H', arg_val = xout)
-    nml_tmp <- set_nml(nml_tmp, arg_name = 'A', arg_val = interp_area)
-    
     write_nml(glm_nml = nml_tmp, file = nml_tmp_file)
     
-    # plot_temp(nc_tmp_file)
-    # get_temp(nc_tmp_file)
   }
 }
-
 
 
 compile_output <- function(dir, nLayers){
@@ -113,8 +112,8 @@ compile_output <- function(dir, nLayers){
   out <- c()
   for(i in 1:length(files)){
     nc_file <- file.path(dir, files[i])
-    temp <- get_temp(nc_file)
-    depths <- as.numeric(na.omit(as.numeric(unlist(strsplit(names(temp)[2:ncol(temp)], split = 'temp.elv_')))))
+    temp <- get_temp(nc_file, reference = 'surface')
+    depths <- get.offsets(temp)
     
     out <- c(out, depths)
   }
@@ -126,49 +125,47 @@ compile_output <- function(dir, nLayers){
   out <- data.frame()
   for(i in 1:length(files)){
     nc_file <- file.path(dir, files[i])
-    temp <- get_temp(nc_file)
-    depths <- as.numeric(na.omit(as.numeric(unlist(strsplit(names(temp)[2:ncol(temp)], split = 'temp.elv_')))))
+    temp <- get_temp(nc_file, reference = 'surface', z_out = depths_out)
     
-    temp_out <- data.frame()
-    for(j in 1:nrow(temp)){
-      interp_temp <- approx(x = depths, y = temp[j,2:ncol(temp)], xout = depths_out)  # linearly interpolate to set depth intervals 
-      cur <- data.frame(matrix(interp_temp$y, ncol = length(depths_out)))
-      colnames(cur) <- paste('temp.elv_', depths_out, sep='')
-      cur$DateTime <- temp$DateTime[j]
-      cur <- cur[,c(ncol(cur),1:(ncol(cur)-1))]
-      
-      temp_out <- rbind(temp_out, cur)
-    }
-    
-    out <- rbind(out, temp_out)
+    out <- rbind(out, temp)
   }
   
   out <- out[sort.list(out$DateTime),]
   return(out)
 } # function for compiling glm temperature output and fixing depths returned (nLayers) 
 
-d_10 <- compile_output('./30_lake_water_energy_model/temp/output_10_days/',nLayers = 14)
-d_2 <- compile_output('./30_lake_water_energy_model/temp/output_2_days/', nLayers = 14)
-d_40 <- compile_output('./30_lake_water_energy_model/temp/output_40_days/', nLayers = 14)
-d_100 <- compile_output('./30_lake_water_energy_model/temp/output_100_days/', nLayers = 14)
-
-
-windows()
-ylim=c(min(c(d_2$temp.elv_0,d_10$temp.elv_0,d_40$temp.elv_0,d_100$temp.elv_0)),max(c(d_2$temp.elv_0,d_10$temp.elv_0,d_40$temp.elv_0,d_100$temp.elv_0)))
-plot(d_2$temp.elv_0~d_2$DateTime,type='l', ylim=ylim)
-lines(d_10$temp.elv_0~d_10$DateTime,type='l', col='red')
-lines(d_40$temp.elv_0~d_40$DateTime, col='blue')
-lines(d_10$temp.elv_0~d_100$DateTime, col='green')
+nLayers <- 14 
+d_10 <- compile_output('./30_lake_water_energy_model/temp/output_10_days/',nLayers = nLayers)
+d_2 <- compile_output('./30_lake_water_energy_model/temp/output_2_days/', nLayers = nLayers)
+d_40 <- compile_output('./30_lake_water_energy_model/temp/output_40_days/', nLayers = nLayers)
+d_100 <- compile_output('./30_lake_water_energy_model/temp/output_100_days/', nLayers = nLayers)
+d_20 <- compile_output('./30_lake_water_energy_model/temp/output_20_days/', nLayers = nLayers)
+d_5 <- compile_output('./30_lake_water_energy_model/temp/output_5_days/', nLayers = nLayers)
 
 windows()
-ylim=c(min(c(d_2[,14],d_10[,14],d_40[,14],d_100[,14]),na.rm = T),max(c(d_2[,14],d_10[,14],d_40[,14],d_100[,14]),na.rm = T))
+ylim=c(min(c(d_2$temp_0,d_10$temp_0,d_40$temp_0,d_100$temp_0),na.rm = T),
+       max(c(d_2$temp_0,d_10$temp_0,d_40$temp_0,d_100$temp_0),na.rm = T))
+par(mar=c(5,6,3,3))
 lwd=3
 cex=2
-plot(d_2[,14]~d_2$DateTime,type='l', ylim=ylim, lwd=lwd, cex.axis= cex, ylab='Temp', xlab='', cex.lab=cex)
-lines(d_10[,14]~d_10$DateTime,type='l', col='red',lwd=lwd)
-lines(d_40[,14]~d_40$DateTime, col='blue',lwd=lwd)
-lines(d_100[,14]~d_100$DateTime, col='green',lwd=lwd)
-legend('topright',legend = c('2 days','10 days', '40 days',' 100 days'),col = c('black','red','blue','green'),
+plot(d_2$temp_0~d_2$DateTime,type='l', ylim=ylim, lwd=lwd, cex.axis= cex, ylab='Temp', xlab='', cex.lab=cex)
+lines(d_10$temp_0~d_10$DateTime,type='l', col='red',lwd=lwd)
+lines(d_40$temp_0~d_40$DateTime, col='blue',lwd=lwd)
+lines(d_100$temp_0~d_100$DateTime, col='green',lwd=lwd)
+lines(d_20$temp_0~d_20$DateTime, col='orange',lwd=lwd)
+lines(d_5$temp_0~d_5$DateTime, col='pink',lwd=lwd)
+legend('topright',legend = c('2 days','5 days', '10 days', '20 days', '40 days',' 100 days'),col = c('black','pink','red','orange', 'blue','green'),
        lwd=lwd , cex = 2,bty = 'n')
+
+windows()
+colnames(d_2)[1]='datetime'
+wtr.heat.map(d_2)
+windows()
+colnames(d_5)[1]='datetime'
+wtr.heat.map(d_5)
+windows()
+colnames(d_10)[1]='datetime'
+wtr.heat.map(d_10)
+
 
 
