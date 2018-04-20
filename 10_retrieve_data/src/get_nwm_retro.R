@@ -1,8 +1,6 @@
 
 
 
-install.packages('ncdf4')
-
 library(ncdf4)
 
 ncin = nc_open('D:/2015/201501010000_streamflow.nc')
