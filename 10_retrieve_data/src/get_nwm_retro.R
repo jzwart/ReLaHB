@@ -9,5 +9,5 @@ print(ncin)
 
 lon = ncvar_get(ncin,'lon')
 
-ncvar_
+ncin$groups
 
